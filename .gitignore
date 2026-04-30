@@ -25,3 +25,6 @@ mlflow.db
 /tmp/
 *.parquet
 journey_log/
+AGENT.md
+MASTER_PLAN.md
+PROJECT_PLAN.md
