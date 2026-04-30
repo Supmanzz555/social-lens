@@ -1,74 +1,89 @@
-# Social Media Data Platform
+# data-pipeline-lab
 
-End-to-end data engineering project using **free cloud services** with **Airflow** for orchestration.
+A local data engineering pipeline that pulls real data from Hacker News, GitHub, and YouTube, streams it through Kafka, processes it with Spark, and stores it in a cloud data lake — all running on a laptop with under 3GB of RAM.
 
-## Stack
+Built as a portfolio project. Every phase of the build is documented in `journey_log/` — including all the mistakes, dead ends, and fixes along the way.
 
-| Component | Service | Location | Cost |
-|-----------|---------|----------|------|
-| Streaming | Apache Kafka | **Local Docker** | Open source |
-| Processing | PySpark | Local | Open source |
-| Data Lake | Cloudflare R2 | Cloud | 10GB free |
-| Warehouse | Neon PostgreSQL | Cloud | 500MB free |
-| Orchestration | Apache Airflow | **Local Docker** | Open source |
-| BI | Metabase | **Local Docker** | Open source |
-| Quality | Great Expectations | Local | Open source |
-| Transform | dbt Core | Local | Open source |
+## What It Does
 
-**Local resource usage: ~3GB RAM, 4 Docker containers (Kafka, Airflow x2, Metabase).**
+```
+Hacker News API ──┐
+GitHub API     ───┼──► Python Producers ──► Kafka ──► Spark Streaming ──► R2 (bronze)
+YouTube API    ──┘
+```
+
+1. **Producers** poll 3 APIs and push JSON messages to Kafka topics
+2. **Spark Streaming** reads those topics and writes partitioned Parquet to Cloudflare R2
+3. **Airflow** orchestrates the whole pipeline on a schedule
+4. **Metabase** connects to the warehouse and builds dashboards
+
+## Tech Stack
+
+| What | Tool | Where |
+|------|------|-------|
+| Streaming | Apache Kafka (KRaft) | Local Docker |
+| Processing | PySpark | Local (your terminal) |
+| Orchestration | Airflow | Local Docker |
+| Data Lake | Cloudflare R2 | Cloud (10GB free) |
+| Warehouse | PostgreSQL | Local Docker |
+| Dashboards | Metabase | Local Docker |
+| ML Tracking | MLflow | Local Python process |
+
+**5 containers. ~2.5GB RAM total.** No paid services.
 
 ## Quick Start
 
 ```bash
-# 1. Clone and configure
+# 1. Set up credentials
 cp .env.example .env
-# Fill in cloud credentials (see MASTER_PLAN.md for setup)
+# Edit .env — you need R2 keys, GitHub token, YouTube API key
+# Hacker News needs nothing.
 
-# 2. Start Docker (Kafka + Airflow + Metabase)
-docker-compose up -d
+# 2. Start everything
+docker compose up -d
+uv venv
+uv pip install pyspark==3.5.1 kafka-python requests pyarrow python-dotenv
+bash scripts/start_mlflow.sh
 
-# 3. Install Python dependencies
-pip install -r producers/requirements.txt
-pip install -r spark/requirements.txt
-pip install -r ml/requirements.txt
+# 3. Run producers (pushes real data to Kafka)
+uv run python producers/hackernews_producer.py --limit 10
+uv run python producers/github_producer.py --limit 10
+uv run python producers/youtube_producer.py --limit 5
 
-# 4. Create Kafka topics
-docker exec kafka kafka-topics.sh --create --topic hackernews-posts --bootstrap-server localhost:9092
-docker exec kafka kafka-topics.sh --create --topic github-events --bootstrap-server localhost:9092
-docker exec kafka kafka-topics.sh --create --topic youtube-videos --bootstrap-server localhost:9092
+# 4. Stream to R2 (runs for 30 seconds, writes Parquet)
+uv run python spark/streaming/kafka_to_r2.py --duration 30
 
-# 5. Run producers
-python producers/hackernews_producer.py
-
-# 6. Run Spark streaming
-python spark/streaming/kafka_to_r2.py
-
-# 7. Run batch pipeline
-python spark/batch/bronze_to_silver.py
-python spark/batch/silver_to_gold.py
-python spark/batch/gold_to_neon.py
-
-# 8. Run dbt transforms
-cd dbt && dbt run
+# 5. Verify everything
+bash scripts/verify_phase1.sh
+bash scripts/verify_phase2.sh
+bash scripts/verify_phase3.sh
 ```
 
 ## Service URLs
 
-| Service | URL | Credentials |
-|---------|-----|-------------|
-| Kafka | Docker container | N/A (localhost:9092) |
-| Cloudflare R2 | https://dash.cloudflare.com | Your account |
-| Neon PostgreSQL | https://console.neon.tech | Your account |
-| Airflow UI | http://localhost:8080 | admin / admin |
-| Metabase | http://localhost:3000 | Setup on first visit |
-| MLflow UI | http://localhost:5000 | No auth needed |
+| Service | URL | Login |
+|---------|-----|-------|
+| Airflow | http://localhost:8080 | admin / admin |
+| Metabase | http://localhost:3000 | Set up on first visit |
+| MLflow | http://localhost:5000 | Open |
+| Kafka | localhost:9092 | No auth |
+| PostgreSQL | localhost:5432 | airflow / airflow |
 
-## Documentation
+## Project Layout
 
-See `MASTER_PLAN.md` for full architecture, every component, data flow, setup checklist, all 9 build phases with verification steps, and troubleshooting.
+```
+producers/        # Python scripts → Kafka (HN, GitHub, YouTube)
+spark/            # PySpark streaming + batch jobs
+configs/          # Shared Spark + R2 configuration
+airflow/          # DAGs and plugins (empty — Phase 5)
+scripts/          # Start MLflow, verify each phase
+postgres/         # DB init script (creates warehouse)
+```
 
-## API Keys
+## Why Local Over Cloud?
 
-- **Hacker News**: https://hacker-news.firebaseio.com/v0/ (no auth needed)
-- **GitHub**: https://github.com/settings/tokens
-- **YouTube**: https://console.cloud.google.com/apis
+Most tutorials spin up expensive cloud clusters. This project runs everything on a single machine by design — same concepts, same code, zero cost. The only thing in the cloud is the data lake (R2), which is free. You can swap in a cloud warehouse later without changing any code.
+
+## Learn More
+
+The `journey_log/` folder (local only) records every problem we hit and how we fixed it — from Kafka topic persistence to Spark memory tuning. It's the honest part of the project.

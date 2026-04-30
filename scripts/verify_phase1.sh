@@ -95,15 +95,13 @@ else
 fi
 echo ""
 
-# 7. Local PostgreSQL (Analytics DB — data warehouse)
+# 8. Local PostgreSQL (Analytics DB — data warehouse)
 echo "--- PostgreSQL (Analytics DB) ---"
 if command -v uv &> /dev/null; then
     cd "$PROJECT_DIR"
     if uv run python -c "
-import psycopg2, os
-from dotenv import load_dotenv
-load_dotenv()
-conn = psycopg2.connect(os.getenv('NEON_CONNECTION_STRING'))
+import psycopg2
+conn = psycopg2.connect('postgresql://airflow:airflow@localhost:5432/analytics_db')
 cur = conn.cursor()
 cur.execute('SELECT 1')
 print('OK')
