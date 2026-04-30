@@ -2,7 +2,7 @@
 
 A local data engineering pipeline that pulls real data from Hacker News, GitHub, and YouTube, streams it through Kafka, processes it with Spark, and stores it in a cloud data lake — all running on a laptop with under 3GB of RAM.
 
-Built as a portfolio project. Every phase of the build is documented in `journey_log/` — including all the mistakes, dead ends, and fixes along the way.
+Built as a portfolio project and learning how to integrating ETL tools together 
 
 ## What It Does
 
