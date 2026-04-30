@@ -1,0 +1,48 @@
+{
+  "name": "bronze_to_silver",
+  "config_version": 1.0,
+  "class_name": "Checkpoint",
+  "run_name_template": "%Y%m%d-%H%M%S-bronze-to-silver-validation",
+  "action_list": [
+    {
+      "name": "store_validation_result",
+      "action": {"class_name": "StoreValidationResultAction"}
+    },
+    {
+      "name": "store_evaluation_params",
+      "action": {"class_name": "StoreEvaluationParametersAction"}
+    },
+    {
+      "name": "update_data_docs",
+      "action": {"class_name": "UpdateDataDocsAction"}
+    }
+  ],
+  "validations": [
+    {
+      "batch_request": {
+        "datasource_name": "r2_datasource",
+        "data_connector_name": "silver_data_connector",
+        "data_asset_name": "hackernews_silver"
+      },
+      "expectation_suite_name": "hackernews_expectations"
+    },
+    {
+      "batch_request": {
+        "datasource_name": "r2_datasource",
+        "data_connector_name": "silver_data_connector",
+        "data_asset_name": "github_silver"
+      },
+      "expectation_suite_name": "github_expectations"
+    },
+    {
+      "batch_request": {
+        "datasource_name": "r2_datasource",
+        "data_connector_name": "silver_data_connector",
+        "data_asset_name": "youtube_silver"
+      },
+      "expectation_suite_name": "youtube_expectations"
+    }
+  ],
+  "evaluation_parameters": {},
+  "runtime_configuration": {}
+}

@@ -1,0 +1,142 @@
+services:
+  # ─── Kafka (KRaft mode, no Zookeeper) ────────────────────────
+  kafka:
+    image: apache/kafka:3.7.0
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: >
+      bash -c '
+        if [ ! -f /var/lib/kafka/data/meta.properties ]; then
+          /opt/kafka/bin/kafka-storage.sh random-uuid > /tmp/cluster_id &&
+          /opt/kafka/bin/kafka-storage.sh format -t $$(cat /tmp/cluster_id) -c /opt/kafka/config/kraft/server.properties &&
+          echo "Formatted KRaft storage"
+        fi &&
+        /opt/kafka/bin/kafka-server-start.sh /opt/kafka/config/kraft/server.properties &
+        while ! nc -z localhost 9092; do sleep 1; done &&
+        /opt/kafka/bin/kafka-topics.sh --create --topic hackernews-posts --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1 --if-not-exists &&
+        /opt/kafka/bin/kafka-topics.sh --create --topic github-events --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1 --if-not-exists &&
+        /opt/kafka/bin/kafka-topics.sh --create --topic youtube-videos --bootstrap-server localhost:9092 --partitions 3 --replication-factor 1 --if-not-exists &&
+        echo "Kafka ready with topics created" &&
+        wait
+      '
+
+  # ─── PostgreSQL for Airflow metadata ─────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Airflow Webserver ───────────────────────────────────────
+  airflow-webserver:
+    image: apache/airflow:2.9.0-python3.11
+    container_name: airflow-webserver
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 'YlJSOEJ3U0x5a0xhNjJYdFNQaVl0YXhRMDk4bGh5Rj0='
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__WEBSERVER__SECRET_KEY: dev-secret-key
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: UTC
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "False"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/logs:/opt/airflow/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data-platform
+    command: >
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com || true &&
+        airflow webserver
+      "
+
+  # ─── Airflow Scheduler ───────────────────────────────────────
+  airflow-scheduler:
+    image: apache/airflow:2.9.0-python3.11
+    container_name: airflow-scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: 'YlJSOEJ3U0x5a0xhNjJYdFNQaVl0YXhRMDk4bGh5Rj0='
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+      AIRFLOW__CORE__DEFAULT_TIMEZONE: UTC
+      AIRFLOW__LOGGING__REMOTE_LOGGING: "False"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/logs:/opt/airflow/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - data-platform
+    command: airflow scheduler
+
+  # ─── Metabase ────────────────────────────────────────────────
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    ports:
+      - "3000:3000"
+    volumes:
+      - metabase_data:/metabase.db
+    environment:
+      MB_DB_TYPE: h2
+      MB_DB_FILE: /metabase.db/metabase.db
+
+volumes:
+  kafka_data:
+  postgres_data:
+  metabase_data:
+
+networks:
+  data-platform:
+    driver: bridge

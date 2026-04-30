@@ -1,0 +1,26 @@
+{
+  "topics": {
+    "hackernews-posts": {
+      "partitions": 3,
+      "retention_ms": 86400000,
+      "description": "Hacker News story data from Firebase API polling"
+    },
+    "github-events": {
+      "partitions": 3,
+      "retention_ms": 86400000,
+      "cleanup_policy": "delete",
+      "description": "GitHub repository events (push, star, fork, PR)"
+    },
+    "youtube-videos": {
+      "partitions": 1,
+      "retention_ms": 86400000,
+      "cleanup_policy": "delete",
+      "description": "YouTube video stats from API polling"
+    }
+  },
+  "common_config": {
+    "replication_factor": 1,
+    "min_insync_replicas": 1,
+    "max_message_bytes": 1048576
+  }
+}
