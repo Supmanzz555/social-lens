@@ -23,6 +23,11 @@ def get_spark_session(app_name: str = "social-media-pipeline") -> SparkSession:
 
     spark = (
         SparkSession.builder.appName(app_name)
+        .config(
+            "spark.jars.packages",
+            "org.apache.hadoop:hadoop-aws:3.3.4,"
+            "org.apache.hadoop:hadoop-common:3.3.4",
+        )
         .config("spark.hadoop.fs.s3a.endpoint", f"https://{r2_account_id}.r2.cloudflarestorage.com")
         .config("spark.hadoop.fs.s3a.access.key", r2_access_key)
         .config("spark.hadoop.fs.s3a.secret.key", r2_secret_key)

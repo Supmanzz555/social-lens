@@ -2,7 +2,7 @@
 
 A local data engineering pipeline that pulls real data from Hacker News, GitHub, and YouTube, streams it through Kafka, processes it with Spark, and stores it in a cloud data lake — all running on a laptop with under 3GB of RAM.
 
-Built as a portfolio project. Every phase of the build is documented in `journey_log/` — including all the mistakes, dead ends, and fixes along the way.
+Built as a portfolio project and learning how to integrating ETL tools together 
 
 ## What It Does
 
@@ -84,6 +84,5 @@ postgres/         # DB init script (creates warehouse)
 
 Most tutorials spin up expensive cloud clusters. This project runs everything on a single machine by design — same concepts, same code, zero cost. The only thing in the cloud is the data lake (R2), which is free. You can swap in a cloud warehouse later without changing any code.
 
-## Learn More
-
-The `journey_log/` folder (local only) records every problem we hit and how we fixed it — from Kafka topic persistence to Spark memory tuning. It's the honest part of the project.
+## Contributing
+Yes and Feels free to do so
