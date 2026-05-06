@@ -14,7 +14,18 @@ APIs (HN, GH, YT) → Producers → Kafka → Spark Streaming → R2 (bronze)
                                                                                           └── Metabase dashboard (30 cards)
 ```
 
-**6 Docker containers. ~3GB RAM. $0 cost.**
+All services run in Docker. $0 cost using free-tier cloud services.
+
+## How It Works
+
+Data flows through 4 layers:
+
+1. **Ingest** — Python producers poll real APIs (Hacker News, GitHub, YouTube), handle rate limits and deduplication, then push JSON messages to Kafka topics.
+2. **Process** — Spark Streaming consumes Kafka and writes raw Parquet to Cloudflare R2 (bronze layer). Spark Batch then cleans, deduplicates, and aggregates the data through silver and gold layers.
+3. **Store** — Gold tables are loaded into PostgreSQL. dbt transforms them into analytics-ready models (staging → intermediate → marts). The ML pipeline trains XGBoost via MLflow and writes predictions back to Postgres.
+4. **Visualize** — Metabase queries Postgres and renders a single dashboard with 30 cards covering pipeline health, engagement metrics, trending topics, creator leaderboards, and ML prediction accuracy.
+
+Every layer has its own quality gate — Great Expectations validates data at the bronze-to-silver transition.
 
 ## Tech Stack
 
@@ -117,3 +128,7 @@ docker compose up -d --build
 ```
 
 Check `journey_log/` before troubleshooting — most issues are already documented.
+
+## Contributing
+
+Feel free to fork, improve, or use this as a reference for your own projects. Pull requests, issue reports, and suggestions are welcome.
