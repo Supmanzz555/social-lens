@@ -111,8 +111,8 @@ def build_write_stream(df, source_name):
         "partition_date", current_date()
     )
 
-    checkpoint_dir = f"spark/streaming/checkpoints/{source_name}"
-    r2_path = f"s3a://{R2_BUCKET}/bronze/source={source_name}"
+    checkpoint_dir = f"/tmp/spark/checkpoints/{source_name}"
+    r2_path = f"s3a://{R2_BUCKET}/bronze/staging/source={source_name}"
 
     query = (
         enriched.writeStream

@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+WORKDIR /opt/mlflow
+
+RUN pip install --no-cache-dir \
+    mlflow==2.15.0 \
+    scikit-learn>=1.4.0 \
+    xgboost>=2.0.3 \
+    pandas>=2.2.0 \
+    psycopg2-binary \
+    setuptools
+
+EXPOSE 5000
+
+CMD [ \
+    "mlflow", "server", \
+    "--host", "0.0.0.0", \
+    "--port", "5000", \
+    "--backend-store-uri", "sqlite:////opt/scripts/mlflow.db", \
+    "--default-artifact-root", "file:///opt/ml/artifacts" \
+]

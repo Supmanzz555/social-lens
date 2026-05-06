@@ -7,9 +7,7 @@ Produces:
 - gold/content_engagement/ — daily engagement metrics per source
 - gold/creator_metrics/ — per-creator stats across platforms
 - gold/trending_topics/ — top topics, tags, and trending keywords
-
-Usage:
-    uv run python spark/batch/silver_to_gold.py [--date YYYY-MM-DD]
+- gold/individual_items/ — normalized event-level data across all sources
 """
 
 import os
@@ -45,6 +43,89 @@ def read_silver(spark, source):
     except Exception:
         logger.warning("No silver data for %s", source)
         return None
+
+
+def build_individual_items(hn, gh, yt, partition_date):
+    """Normalized event-level table with common columns across all sources."""
+    frames = []
+
+    if hn is not None and hn.count() > 0:
+        hn_items = (
+            hn
+            .withColumn("date", lit(partition_date))
+            .withColumn("source", lit("hackernews"))
+            .select(
+                col("date"),
+                col("source"),
+                col("id").alias("event_id"),
+                col("type").alias("event_type"),
+                col("title"),
+                col("by").alias("creator"),
+                col("score"),
+                lit(None).alias("views"),
+                col("descendants").alias("comments"),
+                col("url"),
+                col("created_at"),
+                lit(None).alias("tag"),
+                col("text"),
+            )
+        )
+        frames.append(hn_items)
+
+    if gh is not None and gh.count() > 0:
+        gh_items = (
+            gh
+            .withColumn("date", lit(partition_date))
+            .withColumn("source", lit("github"))
+            .select(
+                col("date"),
+                col("source"),
+                col("id").alias("event_id"),
+                col("type").alias("event_type"),
+                lit(None).alias("title"),
+                col("actor_login").alias("creator"),
+                lit(None).alias("score"),
+                lit(None).alias("views"),
+                lit(None).alias("comments"),
+                lit(None).alias("url"),
+                col("created_at"),
+                lit(None).alias("tag"),
+                col("payload").alias("text"),
+            )
+        )
+        frames.append(gh_items)
+
+    if yt is not None and yt.count() > 0:
+        yt_items = (
+            yt
+            .withColumn("date", lit(partition_date))
+            .withColumn("source", lit("youtube"))
+            .select(
+                col("date"),
+                col("source"),
+                col("video_id").alias("event_id"),
+                lit(None).alias("event_type"),
+                col("title"),
+                col("channel").alias("creator"),
+                lit(None).alias("score"),
+                col("view_count").alias("views"),
+                col("comment_count").alias("comments"),
+                lit(None).alias("url"),
+                col("published_at_ts").alias("created_at"),
+                col("tag"),
+                col("description").alias("text"),
+            )
+        )
+        frames.append(yt_items)
+
+    if frames:
+        combined = frames[0]
+        for f in frames[1:]:
+            combined = combined.unionByName(f, allowMissingColumns=True)
+        logger.info("Individual items: %d rows", combined.count())
+        return combined
+
+    return None
 
 
 def build_content_engagement(hn, gh, yt, partition_date):
@@ -230,6 +311,13 @@ def run(partition_date=None):
     yt = read_silver(spark, "youtube")
 
     # Build gold tables
+    items = build_individual_items(hn, gh, yt, partition_date)
+    if items is not None:
+        items.write.mode("overwrite").parquet(
+            f"s3a://{R2_BUCKET}/gold/individual_items/"
+        )
+        logger.info("Wrote gold/individual_items")
+
     engagement = build_content_engagement(hn, gh, yt, partition_date)
     if engagement is not None:
         engagement.write.mode("overwrite").parquet(

@@ -1,0 +1,18 @@
+FROM apache/airflow:2.9.0-python3.11
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends default-jdk-headless curl && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+RUN pip install --no-cache-dir pyspark==3.5.1 boto3 requests asyncpg great-expectations kafka-python \
+    && pip install --no-cache-dir apache-airflow-providers-apache-spark==4.1.5 --no-deps \
+    && pip install --no-cache-dir apache-airflow-providers-openlineage==1.8.0 --no-deps \
+    && pip install --no-cache-dir mlflow==2.15.0 scikit-learn>=1.4.0 xgboost>=2.0.3 pandas>=2.2.0 psycopg2-binary
+
+# Pre-download S3A connector JARs into Spark's jars directory
+RUN JAR_DIR="/home/airflow/.local/lib/python3.11/site-packages/pyspark/jars" && \
+    MAVEN="https://repo1.maven.org/maven2" && \
+    curl -sfL "$MAVEN/org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar" -o "$JAR_DIR/hadoop-aws-3.3.4.jar" && \
+    curl -sfL "$MAVEN/com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar" -o "$JAR_DIR/aws-java-sdk-bundle-1.12.262.jar" && \
+    curl -sfL "$MAVEN/org/postgresql/postgresql/42.7.3/postgresql-42.7.3.jar" -o "$JAR_DIR/postgresql-42.7.3.jar" && \
+    echo "JARs downloaded"

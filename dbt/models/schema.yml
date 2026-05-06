@@ -1,0 +1,10 @@
+version: 2
+
+sources:
+  - name: gold_layer
+    database: analytics_db
+    schema: public
+    tables:
+      - name: gold_content_engagement
+      - name: gold_creator_metrics
+      - name: gold_trending_topics

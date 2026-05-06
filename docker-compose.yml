@@ -31,6 +31,7 @@ services:
       retries: 5
     command: >
       bash -c '
+        sed -i "s|advertised.listeners=PLAINTEXT://localhost:9092|advertised.listeners=PLAINTEXT://kafka:9092|" /opt/kafka/config/kraft/server.properties &&
         if [ ! -f /var/lib/kafka/data/meta.properties ]; then
           /opt/kafka/bin/kafka-storage.sh random-uuid > /tmp/cluster_id &&
           /opt/kafka/bin/kafka-storage.sh format -t $$(cat /tmp/cluster_id) -c /opt/kafka/config/kraft/server.properties &&
@@ -72,6 +73,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-webserver
+    user: "50000:50000"
     ports:
       - "8080:8080"
     env_file:
@@ -80,7 +82,7 @@ services:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: 'YlJSOEJ3U0x5a0xhNjJYdFNQaVl0YXhRMDk4bGh5Rj0='
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__WEBSERVER__SECRET_KEY: dev-secret-key
       AIRFLOW__CORE__DEFAULT_TIMEZONE: UTC
@@ -92,6 +94,10 @@ services:
       - ./spark:/opt/airflow/spark
       - ./configs:/opt/airflow/configs
       - ./producers:/opt/airflow/producers
+      - ./scripts:/opt/airflow/scripts
+      - ./data_quality:/opt/airflow/data_quality
+      - ./ml:/opt/airflow/ml
+      - ./ml:/opt/ml
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,7 +107,7 @@ services:
       bash -c "
         airflow db migrate &&
         airflow connections delete spark_default 2>/dev/null || true &&
-        airflow connections add spark_default --conn-type spark --conn-host local --conn-extra '{\"queue\": \"local\", \"deploy-mode\": \"client\"}' &&
+        airflow connections add spark_default --conn-type spark --conn-host local --conn-extra '{"queue": "local", "deploy-mode": "client"}' &&
         airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com || true &&
         airflow webserver
       "
@@ -112,13 +118,14 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: airflow-scheduler
+    user: "50000:50000"
     env_file:
       - .env
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: 'YlJSOEJ3U0x5a0xhNjJYdFNQaVl0YXhRMDk4bGh5Rj0='
-      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'false'
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
       AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
       AIRFLOW__CORE__DEFAULT_TIMEZONE: UTC
       AIRFLOW__LOGGING__REMOTE_LOGGING: "False"
@@ -129,12 +136,35 @@ services:
       - ./spark:/opt/airflow/spark
       - ./configs:/opt/airflow/configs
       - ./producers:/opt/airflow/producers
+      - ./scripts:/opt/airflow/scripts
+      - ./data_quality:/opt/airflow/data_quality
+      - ./ml:/opt/airflow/ml
+      - ./ml:/opt/ml
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - data-platform
     command: airflow scheduler
+
+  # ─── MLflow ──────────────────────────────────────────────────
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    container_name: mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./ml:/opt/ml
+      - ./scripts:/opt/scripts
+    networks:
+      - data-platform
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   # ─── Metabase ────────────────────────────────────────────────
   metabase:
@@ -147,6 +177,11 @@ services:
     environment:
       MB_DB_TYPE: h2
       MB_DB_FILE: /metabase.db/metabase.db
+    networks:
+      - data-platform
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
   kafka_data:

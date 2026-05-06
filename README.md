@@ -1,125 +1,119 @@
 # social-lens
 
-A local data engineering pipeline that pulls real data from Hacker News, GitHub, and YouTube, streams it through Kafka, processes it with Spark, and stores it in a cloud data lake — all orchestrated by Airflow.
+End-to-end data engineering pipeline: Hacker News, GitHub, and YouTube APIs → Kafka → Spark → Cloudflare R2 → PostgreSQL → dbt → MLflow → Metabase.
 
-Built as a portfolio project learning how to integrate real ETL tools together.
+Built as a portfolio project. All phases complete.
 
-## What It Does
+## Architecture
 
 ```
-Hacker News API ──┐
-GitHub API     ───┼──► Producers ──► Kafka ──► Spark Streaming ──► R2 (bronze)
-YouTube API    ──┘                                                         │
-                                                                          ▼
-Airflow DAGs ──► Spark Batch (bronze→silver→gold) ──► PostgreSQL ◄────────┘
-                                                      │
-                              ┌───────────────────────┴───────────────────┐
-                              ▼                                           ▼
-                          dbt models                              ML Pipeline (MLflow)
-                              │                                           │
-                              ▼                                           ▼
-                         Metabase dashboards                    Predictions → Postgres
+APIs (HN, GH, YT) → Producers → Kafka → Spark Streaming → R2 (bronze)
+                                                         → Spark Batch (silver → gold) → PostgreSQL
+                                                                                          ├── dbt models
+                                                                                          ├── MLflow (train + predict)
+                                                                                          └── Metabase dashboard (30 cards)
 ```
 
-## Progress
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 1. Cloud + Docker | ✅ Complete | Kafka, Postgres, Airflow, Metabase running |
-| 2. Kafka Producers | ✅ Complete | 3 producers poll APIs → push to Kafka |
-| 3. Spark Streaming | ✅ Complete | Kafka → R2 bronze (partitioned Parquet) |
-| 4. Spark Batch | ✅ Complete | bronze→silver→gold→PostgreSQL |
-| 5. Airflow DAGs | ✅ Complete | `SparkSubmitOperator` orchestrates everything |
-| 6. Data Quality | ⏸️ Planned | Great Expectations validation |
-| 7. dbt Models | ⏸️ Planned | SQL transforms staging→marts |
-| 8. Metabase | ⏸️ Planned | 5 BI dashboards |
-| 9. ML Pipeline | ⏸️ Planned | Train → MLflow → Predict |
+**6 Docker containers. ~3GB RAM. $0 cost.**
 
 ## Tech Stack
 
-| What | Tool | Where |
-|------|------|-------|
-| Streaming | Apache Kafka (KRaft) | Local Docker |
-| Processing | PySpark 3.5.1 | Inside Airflow containers (local mode) |
-| Orchestration | Airflow 2.9.0 | Local Docker (SparkSubmitOperator) |
+| Component | Tool | Where |
+|-----------|------|-------|
+| Streaming | Kafka (KRaft) | Local Docker |
+| Processing | PySpark 3.5.1 | Airflow container (local mode) |
+| Orchestration | Airflow 2.9.0 | Local Docker |
 | Data Lake | Cloudflare R2 | Cloud (10GB free) |
 | Warehouse | PostgreSQL 16 | Local Docker |
-| Dashboards | Metabase | Local Docker |
-| ML Tracking | MLflow | Local Python process |
-
-**5 containers. ~2.5-3GB RAM total.** No paid services.
+| Transforms | dbt Core | CLI |
+| ML Tracking | MLflow 2.15.0 | Docker (pre-baked image) |
+| BI | Metabase v0.60 | Local Docker |
 
 ## Quick Start
 
 ```bash
-# 1. Set up credentials
+# 1. Configure credentials
 cp .env.example .env
-# Edit .env — you need R2 keys, GitHub token, YouTube API key
+# Fill in: R2 keys, GitHub token, YouTube API key
 
-# 2. Build and start everything (first time only)
-docker compose build
-docker compose up -d
+# 2. Start everything
+docker compose up -d --build
+# Wait ~60s for all services
 
-# 3. Run producers (pushes real data to Kafka)
+# 3. Ingest data (host machine)
 source .venv/bin/activate
-uv run python producers/hackernews_producer.py --limit 10
-uv run python producers/github_producer.py --limit 10
-uv run python producers/youtube_producer.py --limit 5
+python producers/hackernews_producer.py --limit 25
+python producers/github_producer.py --limit 25
+python producers/youtube_producer.py --limit 10
 
-# 4. Stream to R2
-uv run python spark/streaming/kafka_to_r2.py --duration 30
+# 4. Run batch pipeline
+# Airflow UI → http://localhost:8080 (admin/admin) → batch_pipeline → Trigger
 
-# 5. Trigger batch pipeline from Airflow
-# Open http://localhost:8080 → batch_pipeline → Trigger DAG
+# 5. Transform + ML
+cd dbt && dbt run && dbt test
+cd .. && python ml/generate_synthetic.py && python ml/train_model.py && python ml/predict.py --n 100
+
+# 6. Dashboard
+python scripts/setup_metabase.py --email YOUR_EMAIL --password YOUR_PASSWORD
 ```
 
-## Airflow DAGs
+## Status
 
-| DAG | Schedule | Tasks |
-|-----|----------|-------|
-| `ingest_streaming` | Every 30 min | 3 producers → Spark streaming |
-| `batch_pipeline` | Daily at 2 AM | bronze→silver → silver→gold → gold→Postgres |
-| `data_quality` | Manual (triggered) | Validate silver, validate gold |
-| `ml_pipeline` | Weekly | Feature gen → train → register → predict |
+| Phase | Status | Description |
+|-------|--------|-------------|
+| 1. Cloud + Docker | ✅ | Kafka, Postgres, Airflow, MLflow, Metabase running |
+| 2. Kafka Producers | ✅ | 3 producers with dedup, pagination, rate limiting |
+| 3. Spark Streaming | ✅ | Kafka → R2 bronze (partitioned Parquet) |
+| 4. Spark Batch | ✅ | bronze→silver→gold→PostgreSQL |
+| 5. Airflow DAGs | ✅ | 4 DAGs via SparkSubmitOperator |
+| 6. Data Quality | ✅ | Great Expectations validation |
+| 7. dbt Models | ✅ | 7 models, 2 tests, all passing |
+| 8. Metabase | ✅ | Single dashboard, 30 cards, all verified |
+| 9. ML Pipeline | ✅ | XGBoost trained, registered, predictions in Postgres |
 
-Spark jobs use `SparkSubmitOperator` with `--master local[*]`. JARs (hadoop-aws, aws-java-sdk, postgres JDBC) are baked into the custom Airflow image (`Dockerfile.airflow`).
+## Dashboards
+
+Single comprehensive dashboard at `http://localhost:3000` with 30 cards across 6 sections:
+
+- **Pipeline Overview** — Total items, source breakdown, data freshness, layer counts
+- **Engagement** — Daily trend, avg score by platform, top items
+- **Platform Deep Dive** — HN/GH/YT stats, content breakdown
+- **Trending Topics** — Top words, tags, cross-source analysis
+- **Creator Leaderboard** — Top creators by score and views
+- **ML Predictions** — Predicted vs actual, error metrics, score distribution
 
 ## Service URLs
 
 | Service | URL | Login |
 |---------|-----|-------|
 | Airflow | http://localhost:8080 | admin / admin |
-| Metabase | http://localhost:3000 | Set up on first visit |
+| Metabase | http://localhost:3000 | Setup on first visit |
 | MLflow | http://localhost:5000 | Open |
-| Kafka | localhost:9092 | No auth |
 | PostgreSQL | localhost:5432 | airflow / airflow |
 
-## Project Layout
+## Project Structure
 
 ```
-producers/        # Python scripts → Kafka (HN, GitHub, YouTube)
-spark/            # PySpark streaming + batch jobs
-configs/          # Shared Spark + R2 configuration
-airflow/          # DAGs, plugins, logs
-  dags/           # batch_pipeline, ingest_streaming, data_quality, ml_pipeline
-  plugins/        # Custom operators (legacy, replaced by SparkSubmitOperator)
-dbt/              # SQL models (Phase 7)
-data_quality/     # Great Expectations configs (Phase 6)
-ml/               # MLflow training + prediction (Phase 9)
-dashboards/       # Metabase exports (Phase 8)
-scripts/          # Verification scripts, MLflow starter
-journey_log/      # Every problem, fix, and lesson learned
-Dockerfile.airflow# Custom Airflow image with pyspark + JARs pre-baked
+producers/          API → Kafka (HN, GH, YT)
+spark/              Streaming + batch PySpark jobs
+airflow/dags/       4 DAGs orchestrate everything
+dbt/                SQL models (staging → marts)
+ml/                 ML training + prediction
+data_quality/       Great Expectations configs
+configs/            Shared R2 + Spark config
+scripts/            Setup + verification utilities
+journey_log/        Every problem and fix documented
 ```
 
-## Architecture Note
+See `MASTER_PLAN.md` for full architecture details.
 
-Spark runs in local mode inside the Airflow containers (not on the host). This resolves the orchestration gap where Airflow (Docker) can't trigger host processes. The actual Spark scripts are unchanged — `SparkSubmitOperator` submits them via `spark-submit --master local[*]`. This pattern matches real production setups where Airflow orchestrates and Spark computes separately.
+## Restart Guide
 
-## Why Local Over Cloud?
+```bash
+docker compose down -v
+docker compose up -d --build
+# Wait ~60s
+# Then: producers → batch_pipeline (Airflow) → dbt → ML → setup_metabase.py
+```
 
-Most tutorials spin up expensive cloud clusters. This project runs everything on a single machine — same concepts, same code, zero cost. The only thing in the cloud is the data lake (R2), which is free. You can swap in a cloud warehouse later without changing any code.
-
-## Contributing
-
-Yes and feels free to do so.
+Check `journey_log/` before troubleshooting — most issues are already documented.

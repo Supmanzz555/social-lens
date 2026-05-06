@@ -1,11 +1,14 @@
 """Airflow DAG: batch pipeline — bronze → silver → gold → PostgreSQL.
 
 Uses SparkSubmitOperator to submit PySpark jobs in local mode.
+Streaming writes to bronze/staging/; commit task moves files to bronze/.
+Batch reads clean bronze/ path (no _spark_metadata conflicts).
 """
 
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.providers.apache.spark.operators.spark_submit import SparkSubmitOperator
+from airflow.operators.bash import BashOperator
 
 default_args = {
     "owner": "airflow",
@@ -17,14 +20,13 @@ default_args = {
 dag = DAG(
     "batch_pipeline",
     default_args=default_args,
-    description="Batch transformation: bronze → silver → gold → PostgreSQL",
+    description="Batch transformation: bronze → silver → gold → PostgreSQL with data quality gate",
     schedule="0 2 * * *",
     start_date=datetime(2026, 1, 1),
     catchup=False,
+    max_active_runs=1,
     tags=["data-pipeline"],
 )
-
-SPARK_HOME = "/home/airflow/.local/lib/python3.11/site-packages/pyspark/jars"
 
 bronze_to_silver = SparkSubmitOperator(
     task_id="bronze_to_silver",
@@ -36,6 +38,13 @@ bronze_to_silver = SparkSubmitOperator(
         "spark.driver.memory": "512m",
     },
     retry_delay=timedelta(minutes=5),
+    dag=dag,
+)
+
+validate_silver = BashOperator(
+    task_id="validate_silver_quality",
+    bash_command="cd /opt/airflow && python scripts/run_data_quality.py",
+    retries=0,
     dag=dag,
 )
 
@@ -61,8 +70,9 @@ gold_to_postgres = SparkSubmitOperator(
         "spark.master": "local[*]",
         "spark.driver.memory": "512m",
     },
+    env_vars={"PG_HOST": "postgres"},
     retry_delay=timedelta(minutes=5),
     dag=dag,
 )
 
-[bronze_to_silver >> silver_to_gold >> gold_to_postgres]
+bronze_to_silver >> validate_silver >> silver_to_gold >> gold_to_postgres

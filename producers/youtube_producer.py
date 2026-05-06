@@ -130,7 +130,7 @@ def run(limit=None):
         if limit and count >= limit:
             break
         try:
-            search = fetch_search_videos(query=q, max_results=10)
+            search = fetch_search_videos(query=q, max_results=50)
             search_items = search.get("items", [])
             video_ids = [i["id"]["videoId"] for i in search_items]
             if video_ids:

@@ -1,30 +1,52 @@
+# Secrets
 .env
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
+*.egg
 *.egg-info/
 dist/
 build/
 .venv/
 venv/
-airflow/logs/
-airflow/data/
-airflow/plugins/*.egg
+
+# Runtime data
 spark/spark-warehouse/
 spark/streaming/checkpoints/
-dbt/dbt_packages/
-dbt/target/
-data_quality/great_expectations/uncommitted/
-*.egg
-*.egg-info/
+*.parquet
 *.db
+/tmp/
+
+# Producer state
 producers/.hn_last_id
 producers/.gh_last_id
 producers/.yt_last_video
+
+# Airflow
+airflow/logs/
+airflow/data/
+airflow/plugins/*.egg
+
+# dbt
+dbt/dbt_packages/
+dbt/target/
+dbt/.user.yml
+dbt/logs/
+
+# ML runtime
+ml/artifacts/
+ml/data/
 mlflow.db
-/tmp/
-*.parquet
-journey_log/
+scripts/mlartifacts/
+
+# GE runtime
+data_quality/great_expectations/
+data_quality/reports/
+
+# AI agent config (not for GitHub)
 AGENT.md
-MASTER_PLAN.md
+
+# Redundant docs
 PROJECT_PLAN.md
